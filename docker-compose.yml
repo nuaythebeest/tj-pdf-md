@@ -1,0 +1,37 @@
+services:
+
+  n8n:
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      - N8N_PORT=5678
+      - NODE_FUNCTION_ALLOW_BUILTIN=child_process
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - opendataloader
+
+  opendataloader:
+    build:
+      context: .
+      dockerfile: Dockerfile.opendataloader
+    container_name: opendataloader
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  n8n_data:

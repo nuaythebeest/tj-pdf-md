@@ -1,0 +1,312 @@
+{
+  "name": "Telegram PDF → Markdown (OpenDataLoader)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "odl-telegram-webhook",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-authorized-chat",
+              "leftValue": "={{ $json.message?.chat?.id }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000010",
+      "name": "IF: Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-pdf-mime",
+              "leftValue": "={{ $json.message?.document?.mime_type ?? '' }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "IF: Is PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "⏳ Received your PDF. Converting to Markdown, please wait...",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "Telegram: Acknowledge",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [720, 160],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.telegram.org/bot{{ $env['TELEGRAM_BOT_TOKEN'] }}/getFile",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_id",
+              "value": "={{ $('Telegram Trigger').item.json.message.document.file_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "HTTP: Get File Path",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 160]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.telegram.org/file/bot{{ $env['TELEGRAM_BOT_TOKEN'] }}/{{ $json.result.file_path }}",
+        "responseFormat": "file",
+        "outputPropertyName": "data",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "HTTP: Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 160]
+    },
+    {
+      "parameters": {
+        "jsCode": "const { spawnSync } = require('child_process');\n\nconst filePath = $('HTTP: Get File Path').first().json.result.file_path;\nconst botToken = $env['TELEGRAM_BOT_TOKEN'];\nconst chatId = String($('Telegram Trigger').first().json.message.chat.id);\nconst originalName = $('Telegram Trigger').first().json.message.document.file_name || 'document.pdf';\nconst fileName = originalName.replace(/\\.pdf$/i, '') + '.md';\n\nconst result = spawnSync('python3', ['-c', `\nimport sys, urllib.request\n\nbot_token = sys.argv[1]\nfile_path = sys.argv[2]\nurl = f\"https://api.telegram.org/file/bot{bot_token}/{file_path}\"\n\nwith urllib.request.urlopen(url) as r:\n    pdf_data = r.read()\nsys.stderr.write(f\"downloaded {len(pdf_data)} bytes\\\\n\")\n\nreq = urllib.request.Request(\"http://opendataloader:5002/convert\", data=pdf_data, method=\"POST\")\nreq.add_header(\"Content-Type\", \"application/pdf\")\nwith urllib.request.urlopen(req, timeout=120) as r:\n    sys.stdout.buffer.write(r.read())\n`, botToken, filePath], {\n  timeout: 120000,\n  maxBuffer: 50 * 1024 * 1024,\n  encoding: 'buffer'\n});\n\nif (result.error) throw result.error;\nif (result.status !== 0) throw new Error('Conversion failed: ' + result.stderr.toString('utf-8'));\n\nconst mdContent = result.stdout.toString('utf-8');\nif (!mdContent) throw new Error('No markdown content received');\n\nreturn [{\n  json: { chatId, fileName, charCount: mdContent.length, success: true },\n  binary: {\n    data: {\n      data: Buffer.from(mdContent, 'utf-8').toString('base64'),\n      mimeType: 'text/markdown',\n      fileName,\n      fileExtension: 'md'\n    }\n  }\n}];"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "Code: Convert PDF → MD",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 160],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendDocument",
+        "chatId": "={{ $json.chatId }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {
+          "caption": "=✅ Conversion complete! *{{ $json.fileName }}*\n📄 {{ $json.charCount }} characters",
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "Telegram: Send Markdown File",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1680, 160],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "❌ Please send a *PDF file* to convert it to Markdown.\n\nSupported: `.pdf` files only.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "Telegram: Not a PDF",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [960, 440],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=⚠️ Conversion failed:\n\n`{{ $json.error?.message || $json.message || 'Unknown error' }}`\n\nPlease try again with a different PDF.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "Telegram: Conversion Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1680, 380],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "IF: Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Authorized?": {
+      "main": [
+        [
+          {
+            "node": "IF: Is PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Is PDF?": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Acknowledge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Not a PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Acknowledge": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Get File Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Get File Path": {
+      "main": [
+        [
+          {
+            "node": "HTTP: Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP: Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Code: Convert PDF → MD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Convert PDF → MD": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Markdown File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Conversion Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "versionId": "odl-pdf-telegram-v2"
+}
