@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir opendataloader-pdf flask
 
 COPY server.py /app/server.py
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 EXPOSE 5002
 
-HEALTHCHECK --interval=15s --timeout=10s --retries=5 --start-period=60s \
+HEALTHCHECK --interval=15s --timeout=10s --retries=5 --start-period=90s \
   CMD curl -f http://localhost:5002/health || exit 1
 
-CMD ["python3", "/app/server.py"]
+CMD ["/app/start.sh"]

@@ -29,8 +29,9 @@ def convert():
             f.write(pdf_data)
 
         result = subprocess.run(
-            ['opendataloader-pdf', input_path, '-o', output_dir, '--format', 'markdown'],
-            capture_output=True, text=True, timeout=120
+            ['opendataloader-pdf', input_path, '-o', output_dir, '--format', 'markdown',
+             '--hybrid', '--hybrid-mode', 'full'],
+            capture_output=True, text=True, timeout=300
         )
 
         if result.returncode != 0:
