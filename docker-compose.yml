@@ -23,7 +23,7 @@ services:
   opendataloader:
     build:
       context: .
-      dockerfile: Dockerfile.opendataloader
+      dockerfile: Dockerfile
     container_name: opendataloader
     restart: unless-stopped
     healthcheck:
