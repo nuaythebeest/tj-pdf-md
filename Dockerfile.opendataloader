@@ -34,7 +34,7 @@ RUN wget -qO - https://repositories.intel.com/gpu/intel-graphics.key \
 #      to the same site-packages/onnxruntime directory, replacing the standard
 #      CPU-only build with Intel's GPU-capable one.
 RUN (apt-get remove -y python3-blinker 2>/dev/null || true) \
-    && pip install --no-cache-dir "opendataloader-pdf[hybrid]" flask rapidocr-onnxruntime \
+    && pip install --no-cache-dir "opendataloader-pdf[hybrid]" flask requests rapidocr-onnxruntime \
     && pip install --no-cache-dir --no-deps onnxruntime-openvino
 
 # /usr/lib/python3.11 is the first Python 3.11 entry in sys.path, so sitecustomize.py
